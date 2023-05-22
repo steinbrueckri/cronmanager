@@ -15,13 +15,10 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-//	"github.com/juju/fslock"
 )
 
 // isDelayed: Used to signal that the cron job delay was triggered
 var (
-	isDelayed    = false
 	jobStartTime time.Time
 	jobDuration  float64
 	flgVersion   bool
@@ -160,14 +157,6 @@ func writeToExporter(jobName string, label string, metric string) {
 	jobData := jobNeedle + " " + metric
 
 	exporterPath := getExporterPath(jobName)
-	// Lock filepath to prevent race conditions
-	// however, lock also prevents reading
-//	lock := fslock.New(exporterPath+".tmp")
-//	err := lock.Lock()
-//	if err != nil {
-//		log.Println("Error locking file " + exporterPath)
-//	}
-//	defer lock.Unlock()
 
 	input, err := ioutil.ReadFile(exporterPath)
 	if err != nil {
