@@ -71,7 +71,6 @@ func main() {
 			writeToExporter(*jobnamePtr, "duration", strconv.FormatFloat(jobDuration, 'f', 0, 64))
 			// Store last timestamp
 			writeToExporter(*jobnamePtr, "last", fmt.Sprintf("%d", time.Now().Unix()))
-//			writeToExporter(*jobnamePtr, "start", fmt.Sprintf("%d", jobStartTime.Unix()))
 		}
 	}()
 
@@ -162,7 +161,7 @@ func writeToExporter(jobName string, label string, metric string) {
 	if err != nil {
 		// We're not sure why we can't read from the file.
 		// Let's try creating it and fail if that didn't work either
-		if _, err := os.Create(exporterPath+".tmp"); err != nil {
+		if _, err := os.Create(exporterPath + ".tmp"); err != nil {
 			log.Fatal("Couldn't read or write to the exporter file. Check parent directory permissions")
 		}
 	}
@@ -182,7 +181,7 @@ func writeToExporter(jobName string, label string, metric string) {
 			input = re.ReplaceAll(input, []byte(typeData+"\n"+jobData))
 		}
 	}
-	f, err := os.Create(exporterPath+".tmp")
+	f, err := os.Create(exporterPath + ".tmp")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -193,7 +192,7 @@ func writeToExporter(jobName string, label string, metric string) {
 	if _, err = f.Write(input); err != nil {
 		log.Fatal(err)
 	}
-	f.Close();
+	f.Close()
 	if err = os.Rename(exporterPath+".tmp", exporterPath); err != nil {
 		log.Fatal(err)
 	}
