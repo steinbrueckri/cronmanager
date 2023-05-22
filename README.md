@@ -11,7 +11,7 @@ The tool uses Node Exporter's TextFile collector to publish the alert to Prometh
 For the tool to work correctly, you need to have Prometheus **node exporter** installed on the machine with the textfile collector enabled and the directory specified. For example, the node exporter command should be run as follows:
 
 ```bash
-/opt/prometheus/exporters/node_exporter_current/node_exporter --collector.conntrack --collector.diskstats --collector.entropy --collector.filefd --collector.filesystem --collector.loadavg --collector.mdadm --collector.meminfo --collector.netdev --collector.netstat --collector.stat --collector.time --collector.vmstat --web.listen-address=0.0.0.0:9100 --log.level=info --collector.textfile --collector.textfile.directory=/opt/prometheus/exporters/dist/textfile
+/opt/prometheus/exporters/node_exporter_current/node_exporter --collector.conntrack --collector.diskstats --collector.entropy --collector.filefd --collector.filesystem --collector.loadavg --collector.mdadm --collector.meminfo --collector.netdev --collector.netstat --collector.stat --collector.time --collector.vmstat --web.listen-address=0.0.0.0:9100 --log.level=info --collector.textfile --collector.textfile.directory=/var/lib/node_exporter
 ```
 
 You can also provide custom collector textfile location using environment variable `COLLECTOR_TEXTFILE_PATH`

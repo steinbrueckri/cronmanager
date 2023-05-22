@@ -141,7 +141,7 @@ func getExporterPath(jobName string) string {
 	exporterPath, exists := os.LookupEnv("COLLECTOR_TEXTFILE_PATH")
 	exporterPath = exporterPath + "/" + jobName + ".prom"
 	if !exists {
-		exporterPath = "/var/cache/prometheus/" + jobName + ".prom"
+		exporterPath = "/var/lib/node_exporter/" + jobName + ".prom"
 	}
 	return exporterPath
 }
