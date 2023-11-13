@@ -155,16 +155,24 @@ func writeToExporter(jobName string, label string, metric string) {
 	typeData := "# TYPE cronjob gauge"
 	jobData := jobNeedle + " " + metric
 
-	exporterPath := getExporterPath(jobName)
+	// first the prom file is created in /tmp and then moved to /var/lib/node_exporter
+	tmpExporterPath := "/tmp/" + jobName + ".prom"
+	finalExporterPath := getExporterPath(jobName)
 
-	input, err := ioutil.ReadFile(exporterPath)
+	f, err := os.Create(tmpExporterPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	input, err := ioutil.ReadFile(finalExporterPath)
 	if err != nil {
 		// We're not sure why we can't read from the file.
 		// Let's try creating it and fail if that didn't work either
-		if _, err := os.Create(exporterPath + ".tmp"); err != nil {
+		if _, err := os.Create(tmpExporterPath); err != nil {
 			log.Fatal("Couldn't read or write to the exporter file. Check parent directory permissions")
 		}
 	}
+
 	re := regexp.MustCompile(jobNeedle + `.*\n`)
 	// If we have the job data alrady, just replace it and that's it
 	if re.Match(input) {
@@ -181,7 +189,7 @@ func writeToExporter(jobName string, label string, metric string) {
 			input = re.ReplaceAll(input, []byte(typeData+"\n"+jobData))
 		}
 	}
-	f, err := os.Create(exporterPath + ".tmp")
+	f, err = os.Create(tmpExporterPath)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -193,7 +201,8 @@ func writeToExporter(jobName string, label string, metric string) {
 		log.Fatal(err)
 	}
 	f.Close()
-	if err = os.Rename(exporterPath+".tmp", exporterPath); err != nil {
+
+	if err = os.Rename(tmpExporterPath, finalExporterPath); err != nil {
 		log.Fatal(err)
 	}
 }
