@@ -59,7 +59,7 @@ check: fmt vet lint staticcheck markdown-lint test
     @echo "✓ All checks passed"
 
 # CI pipeline - runs all checks including release validation
-ci: fmt vet lint staticcheck markdown-lint test validate-release
+ci: fmt vet lint staticcheck markdown-lint test validate-release build
     @echo "✓ CI Pipeline Complete"
 
 # Clean build artifacts

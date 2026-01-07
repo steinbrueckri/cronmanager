@@ -1,3 +1,4 @@
+// Package main provides a cron job manager with Prometheus metrics export via Node Exporter's TextFile collector.
 package main
 
 import (
@@ -17,7 +18,11 @@ import (
 	"time"
 )
 
-// isDelayed: Used to signal that the cron job delay was triggered
+// jobStartTime: Record the start time of the job
+// jobDuration: Used to track the duration of the job
+// flgVersion: Used to print the version and exit
+// version: The version of the cronmanager
+// writeMutex: Used to prevent race conditions when multiple goroutines write to the same file
 var (
 	jobStartTime time.Time
 	jobDuration  float64
