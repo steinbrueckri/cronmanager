@@ -1,0 +1,10 @@
+[tools]
+# Development tools
+golangci-lint = "latest"
+goreleaser = "latest"
+staticcheck = "latest"
+"npm:markdownlint-cli2" = "latest"
+
+[tasks]
+# mise will pick up justfile automatically, but we can add aliases here if needed
+

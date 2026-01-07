@@ -1,21 +1,33 @@
-# This is an example .goreleaser.yml file with some sensible defaults.
+# GoReleaser v2 configuration
 # Make sure to check the documentation at https://goreleaser.com
+version: 2
+
 before:
   hooks:
     # You may remove this if you don't use go modules.
     - go mod tidy
     # you may remove this if you don't need go generate
     - go generate ./...
+
 builds:
   - env:
       - CGO_ENABLED=0
     goos:
       - linux
       - darwin
+    goarch:
+      - amd64
+      - arm64
+      - "386"
+    goarm:
+      - "6"
+      - "7"
+    ignore:
+      - goos: darwin
+        goarch: "386"
 
 archives:
-  - format: tar.gz
-    name_template: >-
+  - name_template: >-
       {{ tolower .ProjectName }}-
       {{- .Version }}.
       {{- tolower .Os }}-
@@ -23,23 +35,59 @@ archives:
       {{- else if eq .Arch "386" }}386
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
-    # use zip for windows archives
-    format_overrides:
-      - goos: windows
-        format: zip
+    files:
+      - LICENSE
+      - README.md
+
 checksum:
   name_template: "checksums.txt"
+
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ incpatch .Version }}-next"
+
 changelog:
   sort: asc
   filters:
     exclude:
       - "^docs:"
       - "^test:"
+      - "^chore:"
+      - "^ci:"
+  groups:
+    - title: Features
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: 'Bug fixes'
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: Others
+      order: 999
 
 release:
+  github:
+    owner: abohmeed
+    name: cronmanager
   name_template: "v{{ .Version }}"
+  draft: false
+  prerelease: auto
+  mode: replace
+  header: |
+    ## CronManager {{ .Version }}
+    
+    Released {{ .Date }}
+    
+    ### Installation
+    
+    ```bash
+    # Download and extract for your platform
+    wget https://github.com/abohmeed/cronmanager/releases/download/{{ .Tag }}/cronmanager-{{ .Version }}.linux-amd64.tar.gz
+    tar xzf cronmanager-{{ .Version }}.linux-amd64.tar.gz
+    sudo mv cronmanager /usr/local/bin/
+    ```
+    
+  footer: |
+    **Full Changelog**: https://github.com/abohmeed/cronmanager/compare/{{ .PreviousTag }}...{{ .Tag }}
+
 # The lines beneath this are called `modelines`. See `:help modeline`
 # Feel free to remove those if you don't want/use them.
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json

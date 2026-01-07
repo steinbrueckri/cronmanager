@@ -1,0 +1,69 @@
+version: 2
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck      # Check for unchecked errors
+    - govet         # Vet examines Go source code
+    - ineffassign   # Detect ineffectual assignments
+    - staticcheck   # Advanced Go linter
+    - unused        # Check for unused constants, variables, functions and types
+    - misspell      # Finds commonly misspelled words
+    - revive        # Fast, configurable, extensible, flexible linter
+    - unconvert     # Remove unnecessary type conversions
+    - unparam       # Reports unused function parameters
+    - gosec         # Inspects source code for security problems
+    - bodyclose     # Check whether HTTP response body is closed
+    - gocritic      # The most opinionated Go linter
+    - gocyclo       # Computes cyclomatic complexity
+    - dupl          # Code clone detection
+    - prealloc      # Find slice declarations that could potentially be preallocated
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+  
+  govet:
+    enable-all: true
+    disable:
+      - shadow
+  
+  gocyclo:
+    min-complexity: 15
+  
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+    disabled-checks:
+      - unnamedResult
+      - hugeParam
+  
+  revive:
+    confidence: 0.8
+  
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - errcheck
+    # Exclude G304 (file inclusion) warnings in test files - tests use controlled temp directories
+    - path: _test\.go
+      text: "G304:"
+
+output:
+  print-issued-lines: true
+  print-linter-name: true
