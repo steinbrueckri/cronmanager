@@ -6,13 +6,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -23,6 +23,7 @@ var (
 	jobDuration  float64
 	flgVersion   bool
 	version      string
+	writeMutex   sync.Mutex
 )
 
 const (
@@ -46,6 +47,7 @@ func main() {
 	cmdPtr := flag.String("c", "", "[Required] The `cron job` command")
 	jobnamePtr := flag.String("n", "", "[Required] The `job name` to appear in the alarm")
 	logfilePtr := flag.String("l", "", "[Optional] The `log file` to store the cron output")
+	timeoutPtr := flag.Int("t", 3600, "[Optional] The timeout in `seconds` after which the job is considered delayed (default: 3600)")
 	flag.BoolVar(&flgVersion, "version", false, "if true print version and exit")
 	flag.Parse()
 	if flgVersion {
@@ -53,17 +55,22 @@ func main() {
 		os.Exit(0)
 	}
 	flag.Usage = func() {
-		fmt.Printf("Usage: cronmanager -c command  -n jobname  [ -l log file ]\nExample: cronmanager \"/usr/bin/php /var/www/app.zlien.com/console broadcast:entities:updated -e project -l 20000\" -n update_entitites_cron -t 3600 -l /path/to/log\n")
+		fmt.Printf("Usage: cronmanager -c command  -n jobname  [ -t timeout ] [ -l log file ]\nExample: cronmanager -c \"/usr/bin/php /var/www/app.zlien.com/console broadcast:entities:updated -e project -l 20000\" -n update_entitites_cron -t 3600 -l /path/to/log\n")
 		flag.PrintDefaults()
 	}
 	if *cmdPtr == "" || *jobnamePtr == "" {
 		flag.Usage()
 		os.Exit(1)
 	}
+	if *timeoutPtr <= 0 {
+		fmt.Fprintf(os.Stderr, "Error: timeout must be greater than 0\n")
+		os.Exit(1)
+	}
 
-	//Record the start time of the job
+	// Record the start time of the job
 	jobStartTime = time.Now()
-	//Start a ticker in a goroutine that will write an alarm metric if the job exceeds the time
+	timeoutSeconds := *timeoutPtr
+	// Start a ticker in a goroutine that will write an alarm metric if the job exceeds the time
 	go func() {
 		for range time.Tick(time.Second) {
 			jobDuration = time.Since(jobStartTime).Seconds()
@@ -71,44 +78,89 @@ func main() {
 			writeToExporter(*jobnamePtr, "duration", strconv.FormatFloat(jobDuration, 'f', 0, 64))
 			// Store last timestamp
 			writeToExporter(*jobnamePtr, "last", fmt.Sprintf("%d", time.Now().Unix()))
+			// Check if job is delayed
+			if jobDuration > float64(timeoutSeconds) {
+				writeToExporter(*jobnamePtr, "delayed", "1")
+			}
 		}
 	}()
 
 	// Job started
 	writeToExporter(*jobnamePtr, "run", "1")
+	// Initialize delayed flag to 0
+	writeToExporter(*jobnamePtr, "delayed", "0")
 
 	// Parse the command by extracting the first token as the command and the rest as its args
 	cmdArr := strings.Split(*cmdPtr, " ")
+	if len(cmdArr) == 0 {
+		log.Fatal("Error: command cannot be empty")
+	}
 	cmdBin := cmdArr[0]
 	cmdArgs := cmdArr[1:]
+
+	// Validate that the command binary exists and is executable
+	if _, err := os.Stat(cmdBin); err != nil {
+		log.Fatalf("Error: command binary '%s' not found or not accessible: %v", cmdBin, err)
+	}
+
+	// #nosec G204 -- This is the intended purpose of this tool: execute user-provided commands
 	cmd := exec.Command(cmdBin, cmdArgs...)
 
 	var buf bytes.Buffer
+	var wg sync.WaitGroup
 
 	// If we have a log file specified, use it
 	if *logfilePtr != "" {
-		outfile, err := os.OpenFile(*logfilePtr, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		outfile, err := os.OpenFile(*logfilePtr, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 		if err != nil {
 			panic(err)
 		}
-		defer outfile.Close()
+		defer func() {
+			if err := outfile.Close(); err != nil {
+				log.Printf("Error closing log file: %v", err)
+			}
+		}()
 		stdoutPipe, err := cmd.StdoutPipe()
 		if err != nil {
 			panic(err)
 		}
+		stderrPipe, err := cmd.StderrPipe()
+		if err != nil {
+			panic(err)
+		}
 		writer := bufio.NewWriter(outfile)
-		defer writer.Flush()
-		go io.Copy(writer, stdoutPipe)
+		defer func() {
+			if err := writer.Flush(); err != nil {
+				log.Printf("Error flushing writer: %v", err)
+			}
+		}()
+		// Copy both stdout and stderr to the log file
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			if _, err := io.Copy(writer, stdoutPipe); err != nil {
+				log.Printf("Error copying stdout: %v", err)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			if _, err := io.Copy(writer, stderrPipe); err != nil {
+				log.Printf("Error copying stderr: %v", err)
+			}
+		}()
 	} else {
 		cmd.Stdout = &buf
+		cmd.Stderr = &buf
 	}
-	err := cmd.Start()
-	if err != nil {
-		log.Fatal(err)
+	if err := cmd.Start(); err != nil {
+		panic(fmt.Sprintf("Failed to start command: %v", err))
 	}
 
 	// Execute the command
-	err = cmd.Wait()
+	err := cmd.Wait()
+
+	// Wait for both pipes to complete after cmd.Wait()
+	wg.Wait()
 
 	// wait if idle is active
 	if *idle {
@@ -121,6 +173,8 @@ func main() {
 				writeToExporter(*jobnamePtr, "failed", "1")
 				// Job is no longer running
 				writeToExporter(*jobnamePtr, "run", "0")
+				// Clear delayed flag
+				writeToExporter(*jobnamePtr, "delayed", "0")
 			}
 		} else {
 			log.Fatalf("cmd.Wait: %v", err)
@@ -130,7 +184,8 @@ func main() {
 		writeToExporter(*jobnamePtr, "failed", "0")
 		// Job is no longer running
 		writeToExporter(*jobnamePtr, "run", "0")
-		// In all cases, unlock the file
+		// Clear delayed flag
+		writeToExporter(*jobnamePtr, "delayed", "0")
 	}
 
 	// Store last timestamp
@@ -147,6 +202,10 @@ func getExporterPath(jobName string) string {
 }
 
 func writeToExporter(jobName string, label string, metric string) {
+	// Lock to prevent race conditions when multiple goroutines write to the same file
+	writeMutex.Lock()
+	defer writeMutex.Unlock()
+
 	jobNeedle := "cronjob{name=\"" + jobName + "\",dimension=\"" + label + "\"}"
 	// both TYPE and HELP must be the same across all .prom files
 	// otherwise node_exporter textfile won't merge them
@@ -159,50 +218,59 @@ func writeToExporter(jobName string, label string, metric string) {
 	tmpExporterPath := "/tmp/" + jobName + ".prom"
 	finalExporterPath := getExporterPath(jobName)
 
-	f, err := os.Create(tmpExporterPath)
+	// #nosec G304 -- finalExporterPath is derived from COLLECTOR_TEXTFILE_PATH env var or default system path
+	input, err := os.ReadFile(finalExporterPath)
 	if err != nil {
-		log.Fatal(err)
+		// File doesn't exist yet, start with empty input
+		input = []byte{}
 	}
 
-	input, err := ioutil.ReadFile(finalExporterPath)
-	if err != nil {
-		// We're not sure why we can't read from the file.
-		// Let's try creating it and fail if that didn't work either
-		if _, err := os.Create(tmpExporterPath); err != nil {
-			log.Fatal("Couldn't read or write to the exporter file. Check parent directory permissions")
-		}
-	}
+	// Escape special regex characters in jobNeedle for safe pattern matching
+	escapedJobNeedle := regexp.QuoteMeta(jobNeedle)
+	re := regexp.MustCompile(escapedJobNeedle + `.*\n`)
 
-	re := regexp.MustCompile(jobNeedle + `.*\n`)
-	// If we have the job data alrady, just replace it and that's it
+	// If we have the job data already, just replace it and that's it
 	if re.Match(input) {
 		input = re.ReplaceAll(input, []byte(jobData+"\n"))
 	} else {
 		// If TYPE line is not there then this is the first run of the job
-		if re := regexp.MustCompile(typeData); !re.Match(input) {
+		typeRegex := regexp.MustCompile(`# TYPE cronjob gauge`)
+		if !typeRegex.Match(input) {
 			// Add HELP, TYPE and the job data
-			input = append(input, helpData+"\n"...)
-			input = append(input, typeData+"\n"...)
-			input = append(input, jobData+"\n"...)
+			input = append(input, []byte(helpData+"\n")...)
+			input = append(input, []byte(typeData+"\n")...)
+			input = append(input, []byte(jobData+"\n")...)
 		} else {
-			// Or there is a TYPE header with one or more other jobs. Just append the job to the TYPE headers
-			input = re.ReplaceAll(input, []byte(typeData+"\n"+jobData))
+			// There is already a TYPE header with one or more other jobs
+			// Just append the job data after the TYPE line
+			input = append(input, []byte(jobData+"\n")...)
 		}
 	}
-	f, err = os.Create(tmpExporterPath)
+
+	// #nosec G304 -- tmpExporterPath is constructed from job name and /tmp directory
+	f, err := os.Create(tmpExporterPath)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("Failed to create temp file: %v", err)
+		return
 	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			log.Printf("Error closing temp file: %v", err)
+		}
+	}()
+
 	err = f.Chmod(0644)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("Failed to set file permissions: %v", err)
+		return
 	}
+
 	if _, err = f.Write(input); err != nil {
-		log.Fatal(err)
+		log.Printf("Failed to write to temp file: %v", err)
+		return
 	}
-	f.Close()
 
 	if err = os.Rename(tmpExporterPath, finalExporterPath); err != nil {
-		log.Fatal(err)
+		log.Printf("Failed to move temp file to final location: %v", err)
 	}
 }
