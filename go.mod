@@ -1,3 +1,3 @@
-module github.com/abohmeed/cronmanager
+module github.com/steinbrueckri/cronmanager
 
 go 1.21

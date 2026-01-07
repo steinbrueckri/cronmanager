@@ -65,7 +65,7 @@ changelog:
 
 release:
   github:
-    owner: abohmeed
+    owner: steinbrueckri
     name: cronmanager
   name_template: "v{{ .Version }}"
   draft: false
@@ -80,13 +80,13 @@ release:
     
     ```bash
     # Download and extract for your platform
-    wget https://github.com/abohmeed/cronmanager/releases/download/{{ .Tag }}/cronmanager-{{ .Version }}.linux-amd64.tar.gz
+    wget https://github.com/steinbrueckri/cronmanager/releases/download/{{ .Tag }}/cronmanager-{{ .Version }}.linux-amd64.tar.gz
     tar xzf cronmanager-{{ .Version }}.linux-amd64.tar.gz
     sudo mv cronmanager /usr/local/bin/
     ```
     
   footer: |
-    **Full Changelog**: https://github.com/abohmeed/cronmanager/compare/{{ .PreviousTag }}...{{ .Tag }}
+    **Full Changelog**: https://github.com/steinbrueckri/cronmanager/compare/{{ .PreviousTag }}...{{ .Tag }}
 
 # The lines beneath this are called `modelines`. See `:help modeline`
 # Feel free to remove those if you don't want/use them.
