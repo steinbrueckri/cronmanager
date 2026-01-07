@@ -1,89 +1,94 @@
-# Description
+# CronManager
 
-CronManager is a tool written in Go that is used as a wrapper to start cron job. The application does the following:
+Go-based cron job wrapper for Prometheus monitoring via Node Exporter's TextFile collector.
 
-1. Executes the command
-2. Measures the command execution time
-3. Examines the command exit status
-The tool uses Node Exporter's TextFile collector to publish the alert to Prometheus.
-# Requirements
+Tracks execution time, exit status, and timeout detection with metrics output for Prometheus.
 
-For the tool to work correctly, you need to have Prometheus **node exporter** installed on the machine with the textfile collector enabled and the directory specified. For example, the node exporter command should be run as follows:
+## Requirements
 
-```bash
-/opt/prometheus/exporters/node_exporter_current/node_exporter --collector.conntrack --collector.diskstats --collector.entropy --collector.filefd --collector.filesystem --collector.loadavg --collector.mdadm --collector.meminfo --collector.netdev --collector.netstat --collector.stat --collector.time --collector.vmstat --web.listen-address=0.0.0.0:9100 --log.level=info --collector.textfile --collector.textfile.directory=/var/lib/node_exporter
-```
+- Prometheus Node Exporter with TextFile collector enabled
+- Default path: `/var/lib/node_exporter/` (override via `COLLECTOR_TEXTFILE_PATH`)
 
-You can also provide custom collector textfile location using environment variable `COLLECTOR_TEXTFILE_PATH`
+## Quick Start
 
 ```bash
-EXPORT COLLECTOR_TEXTFILE_PATH = /custom/path/to/textfile
-/opt/prometheus/exporters/node_exporter_current/node_exporter --collector.conntrack --collector.diskstats --collector.entropy --collector.filefd --collector.filesystem --collector.loadavg --collector.mdadm --collector.meminfo --collector.netdev --collector.netstat --collector.stat --collector.time --collector.vmstat --web.listen-address=0.0.0.0:9100 --log.level=info --collector.textfile --collector.textfile.directory=$COLLECTOR_TEXTFILE_PATH
+# Install tools (brew install just goreleaser golangci-lint)
+just setup              # Install dev dependencies
+just build              # Build for current platform
+just install            # Install to /usr/local/bin (requires sudo)
 ```
-# Installation
 
-Build the binary:
+### Release Process
+
+**Create Release:**
 
 ```bash
-env GOOS=linux go build -o cronmanager
+# 1. Run checks
+just check
+
+# 2. Create release (updates version, commits, tags, builds)
+just release v1.2.0
+git push origin v1.2.0
 ```
 
-Move the program to a directory in your $PATH
+The `release` command automatically:
+
+- Updates version in main.go
+- Commits and pushes changes
+- Creates git tag
+- Builds all platforms
+- Creates GitHub release with changelog
+
+**Release includes:**
+
+- Binaries for linux/darwin (amd64, arm64, 386)
+- Archives: `cronmanager-{version}.{os}-{arch}.tar.gz`
+- Auto-generated changelog from conventional commits
+
+## Usage
 
 ```bash
-sudo mv cronmanager /usr/local/bin/
+cronmanager -c COMMAND -n JOBNAME [-t TIMEOUT] [-l LOGFILE] [-i]
 ```
 
+**Required:**
 
+- `-c` Command to execute (binary path + args, no shell built-ins)
+- `-n` Job name for metrics
 
-# Usage
+**Optional:**
 
-The program can be used as follows:
+- `-t` Timeout in seconds (default: 3600) - sets `delayed=1` metric when exceeded
+- `-l` Log file path (stdout/stderr)
+- `-i` Idle for 60s to let Prometheus scrape metrics
+
+**Examples:**
 
 ```bash
-cronmanager -c command -n jobname [ -t time in seconds ] [ -l log file ]
+cronmanager -c "/usr/bin/php /var/www/app/console task" -n update_entities_cron -t 1800
+cronmanager -c "/usr/bin/python3 /path/script.py" -n python_job -l /var/log/job.log
 ```
 
-Both `command` and `jobname` are mandatory arguments. Notice that you cannot a bash shell or any of its shell built-ins as the command. So, the following examples will **<u>not work</u>**:
+**Note:** Cannot use shell operators (`>`, `|`, `;`) - command must be a binary with args.
 
-```bash
-cronmanager -c "echo 'hello' > somefile"
-cronmanager -c "command1; command2; command3"
-```
+## Metrics
 
-The expected command is a binary file with optional arguments. For example, the following are **<u>valid</u>** commands for cronmanager:
+Writes to `$COLLECTOR_TEXTFILE_PATH/{jobname}.prom`:
 
-```bash
-cronmanager -c "/usr/bin/php /var/www/webdir/console broadcast:entities:updated -e project -l 20000"
-cronmanager -c "/usr/bin/python3 /path/to/python_script.py"
-```
-
-Additional *-i* parameter adds sleep at the end of the process to let Prometheus to notice something is happening. It's going to sleep for 60 seconds minus anything that had happened before that. That means that if the command takes 20 seconds to finish the sleep at the end will be 40 seconds.
-
-# Options
-
-`-c`: The command to execute (required). This parameter is required. Please see the Usage section for caveats.
-
-`-n`: The job name (required). It's a good practice to append `_cron` to the job name for easier distinction when viewing the alerts on Prometheus or Graffana.
-
-`-t`: the time in seconds after which `cronmanager` will alert that the job is taking more than it should. The default is 3600 seconds (1 hour).
-
-`-l`: the log file were you want the cron job to write its output. The default is that any output is trashed.
-
-Notice that if  don't specify `-n` followed by a name, the command will default to "Generic" as the job name.
-
-# Alerting
-
-For the tool to work, the `/opt/prometheus/exporters/dist/textfile/ `path **<u>must exist</u>** on the machine with permissions for the user running cronmanager to write to it. This is the default path where the exporter files exist.
-
-Once cronmanager starts a job, it will wait for the specified seconds (using `-t` or the default 3600 seconds). If the cron is still running, cronmanager writes to a file under the exporters path. The file name consists of the job name followed by the `.prom` extension. For example, if you run the command like this `cronmanager -c "some_command some_arguments" -n "myjob"` the following file will be created: `/opt/prometheus/exporters/dist/textfile/myjob.prom`. The contents of the file are as follows:
-
-```plain
+```prometheus
 # HELP cronjob metric generated by cronmanager
 # TYPE cronjob gauge
-cronjob{"name=cron1","dimension=failed"} 0
-cronjob{"name=cron1","dimension=delayed"} 0
-cronjob{"name=cron1","dimension=duration"} 10
+cronjob{name="myjob",dimension="run"} 1          # Currently running
+cronjob{name="myjob",dimension="failed"} 0       # Exit status (0=success, 1=failed)
+cronjob{name="myjob",dimension="delayed"} 0      # Timeout exceeded (0=ok, 1=delayed)
+cronjob{name="myjob",dimension="duration"} 42    # Runtime in seconds
+cronjob{name="myjob",dimension="last"} 1704636000 # Last run timestamp
 ```
 
-The numbers change to `1` depending on the issue found with the cron job (delayed/failed or both).
+## Testing
+
+Run with `just ci`
+
+## License
+
+MIT
