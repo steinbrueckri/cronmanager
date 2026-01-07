@@ -47,7 +47,7 @@ func idleWait(jobStart time.Time) {
 
 func main() {
 
-	version = "1.1.18"
+	version = "1.2.0"
 	idle := flag.Bool("i", false, fmt.Sprintf("Idle for %d seconds at the beginning so Prometheus can notice it's actually running", idleForSeconds))
 	cmdPtr := flag.String("c", "", "[Required] The `cron job` command")
 	jobnamePtr := flag.String("n", "", "[Required] The `job name` to appear in the alarm")
