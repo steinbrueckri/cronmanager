@@ -104,12 +104,14 @@ func main() {
 	cmdArgs := cmdArr[1:]
 
 	// Validate that the command binary exists and is executable
-	if _, err := os.Stat(cmdBin); err != nil {
-		log.Fatalf("Error: command binary '%s' not found or not accessible: %v", cmdBin, err)
+	// Use LookPath to search in PATH if not an absolute path
+	resolvedCmd, lookErr := exec.LookPath(cmdBin)
+	if lookErr != nil {
+		log.Fatalf("Error: command binary '%s' not found or not accessible: %v", cmdBin, lookErr)
 	}
 
 	// #nosec G204 -- This is the intended purpose of this tool: execute user-provided commands
-	cmd := exec.Command(cmdBin, cmdArgs...)
+	cmd := exec.Command(resolvedCmd, cmdArgs...)
 
 	var buf bytes.Buffer
 	var wg sync.WaitGroup
